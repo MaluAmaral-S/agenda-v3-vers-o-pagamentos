@@ -1,0 +1,15 @@
+const express = require('express');
+const { authenticateToken } = require('../middleware/auth');
+const {
+  createSubscription,
+  getMySubscription,
+  getSubscription,
+} = require('../controllers/subscriptionController');
+
+const router = express.Router();
+
+router.post('/subscriptions', authenticateToken, createSubscription);
+router.get('/subscriptions/me', authenticateToken, getMySubscription);
+router.get('/subscriptions', authenticateToken, getSubscription);
+
+module.exports = router;
