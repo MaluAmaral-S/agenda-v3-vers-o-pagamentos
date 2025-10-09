@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const validator = require("validator");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
+const config = require("../config/config");
 
 /**
  * Registra um novo usuário no sistema.
@@ -42,15 +43,15 @@ exports.register = async (req, res) => {
     // Geração do Access Token (curta duração)
     const accessToken = jwt.sign(
       { id: user.id, name: user.name, business: user.businessName },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
+      config.jwt.secret,
+      { expiresIn: config.jwt.expiresIn }
     );
 
     // Geração do Refresh Token (longa duração)
     const refreshToken = jwt.sign(
       { id: user.id },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' }
+      config.jwt.refreshSecret,
+      { expiresIn: config.jwt.refreshExpiresIn }
     );
 
     // Salva o refresh token no banco de dados
@@ -60,7 +61,7 @@ exports.register = async (req, res) => {
     // Envia o refresh token em um cookie httpOnly
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: config.env === "production",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
       path: '/api/auth',
     });
@@ -95,7 +96,7 @@ exports.refreshToken = async (req, res) => {
   }
 
   try {
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const decoded = jwt.verify(refreshToken, config.jwt.refreshSecret);
     const user = await User.findOne({ where: { id: decoded.id, refreshToken } });
 
     if (!user) {
@@ -104,8 +105,8 @@ exports.refreshToken = async (req, res) => {
 
     const accessToken = jwt.sign(
       { id: user.id, name: user.name, business: user.businessName },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
+      config.jwt.secret,
+      { expiresIn: config.jwt.expiresIn }
     );
 
     res.status(200).json({
@@ -116,7 +117,7 @@ exports.refreshToken = async (req, res) => {
     // Limpa o cookie inválido no cliente
     res.cookie("refreshToken", "", {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: config.env === "production",
         expires: new Date(0),
         path: '/api/auth',
     });
@@ -150,15 +151,15 @@ exports.login = async (req, res) => {
     // Geração do Access Token (curta duração)
     const accessToken = jwt.sign(
       { id: user.id, name: user.name, business: user.businessName },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
+      config.jwt.secret,
+      { expiresIn: config.jwt.expiresIn }
     );
 
     // Geração do Refresh Token (longa duração)
     const refreshToken = jwt.sign(
       { id: user.id },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' }
+      config.jwt.refreshSecret,
+      { expiresIn: config.jwt.refreshExpiresIn }
     );
 
     // Salva o refresh token no banco de dados
@@ -168,7 +169,7 @@ exports.login = async (req, res) => {
     // Envia o refresh token em um cookie httpOnly
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: config.env === "production",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
       path: '/api/auth', // Garante que o cookie seja enviado apenas para as rotas de autenticação
     });
@@ -218,7 +219,7 @@ exports.protect = async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, config.jwt.secret);
     req.user = await User.findByPk(decoded.id);
     if (!req.user) {
       return res.status(401).json({ message: "O token pertence a um usuário que não existe mais." });
@@ -304,7 +305,7 @@ exports.logout = async (req, res) => {
   // Limpa o cookie do refresh token no cliente
   res.cookie("refreshToken", "", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: config.env === "production",
     expires: new Date(0), // Expira o cookie imediatamente
     path: '/api/auth',
   });
@@ -530,7 +531,7 @@ exports.resetPassword = async (req, res) => {
  * @param {Object} res - Objeto de resposta do Express.
  */
 exports.deleteTestUser = async (req, res) => {
-  if (process.env.NODE_ENV !== "development" && process.env.NODE_ENV !== "test") {
+  if (config.env !== "development" && config.env !== "test") {
     return res.status(403).json({ message: "Esta operação é permitida apenas em ambientes de desenvolvimento/teste." });
   }
   try {

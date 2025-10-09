@@ -1,4 +1,4 @@
-require('dotenv').config();
+const config = require('./src/config/config');
 const express = require('express');
 const path = require('path');
 const cookieParser = require('cookie-parser');
@@ -20,7 +20,7 @@ const stripeController = require('./src/controllers/stripeController');
 const seedPlans = require('./src/scripts/seedPlans');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.port;
 
 /**
  * ⚠️ IMPORTANTE: o Webhook do Stripe deve vir ANTES de express.json()
@@ -55,9 +55,9 @@ app.use((req, res, next) => {
   ];
   const origin = req.headers.origin;
 
-  if (process.env.NODE_ENV === 'development' || allowedOrigins.includes(origin)) {
+  if (config.env === 'development' || allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin || '*');
-  } else if (process.env.NODE_ENV === 'production') {
+  } else if (config.env === 'production') {
     res.header('Access-Control-Allow-Origin', '*');
   }
 
