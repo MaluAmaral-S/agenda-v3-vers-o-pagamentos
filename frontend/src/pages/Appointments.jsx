@@ -115,7 +115,7 @@ const Appointments = () => {
       }
 
       const response = await apiRequest.get(
-        `/empresa/${user.id}/agendamentos?${params.toString()}`
+        `/agendamentos?${params.toString()}`
       );
 
       setAppointments(response.appointments || []);

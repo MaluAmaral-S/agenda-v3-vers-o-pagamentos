@@ -47,7 +47,11 @@ const User = sequelize.define('User', {
   phone: {
     type: DataTypes.STRING,
     allowNull: true,
-  }
+  },
+  refreshToken: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
 });
 
 // CORREÇÃO: Usamos 'beforeSave' para que a senha seja criptografada

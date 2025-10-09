@@ -24,48 +24,85 @@ api.interceptors.request.use(
   }
 );
 
+// Variável para evitar loops de refresh
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 // Interceptor para tratar respostas e erros
 api.interceptors.response.use(
   (response) => {
     return response;
   },
-  (error) => {
+  async (error) => {
+    const originalRequest = error.config;
     const { response } = error;
+
+    if (response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers['Authorization'] = 'Bearer ' + token;
+          return api(originalRequest);
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const { token: newToken } = await api.post('/auth/refresh-token');
+        setAuthToken(newToken);
+        originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+        processQueue(null, newToken);
+        return api(originalRequest);
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        clearAuth();
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
     
-    // Tratar diferentes tipos de erro
+    // Tratar outros tipos de erro
     if (!response) {
-      // Erro de rede
       throw new Error(ERROR_MESSAGES.NETWORK_ERROR);
     }
     
     const backendMessage = response.data?.error || response.data?.message;
 
     switch (response.status) {
-      case 401:
-        // Token expirado ou inválido
-        localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
-        localStorage.removeItem(STORAGE_KEYS.USER_DATA);
-        window.location.href = '/login';
-        throw new Error(backendMessage || ERROR_MESSAGES.UNAUTHORIZED);
-        
       case 403:
         throw new Error(backendMessage || ERROR_MESSAGES.FORBIDDEN);
-        
       case 404:
         throw new Error(backendMessage || ERROR_MESSAGES.NOT_FOUND);
-        
       case 422:
-        // Erro de validação
         const validationErrors = response.data?.errors || {};
         const firstError = Object.values(validationErrors)[0];
         throw new Error(firstError || backendMessage || ERROR_MESSAGES.VALIDATION_ERROR);
-        
       case 500:
         throw new Error(backendMessage || ERROR_MESSAGES.SERVER_ERROR);
-        
       default:
-        throw new Error(backendMessage || ERROR_MESSAGES.GENERIC_ERROR);
+        // Se não for 401, rejeita o erro para não quebrar a cadeia
+        if(response.status !== 401) {
+            throw new Error(backendMessage || ERROR_MESSAGES.GENERIC_ERROR);
+        }
     }
+
+    return Promise.reject(error);
   }
 );
 

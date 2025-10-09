@@ -1,4 +1,4 @@
-import { apiRequest, setAuthToken, clearAuth } from './api';
+import { apiRequest, setAuthToken, clearAuth, getAuthToken } from './api';
 import { API_ROUTES, STORAGE_KEYS } from '../utils/constants';
 
 class AuthService {
@@ -9,16 +9,14 @@ class AuthService {
     try {
       const response = await apiRequest.post(API_ROUTES.AUTH.LOGIN, credentials);
       
-      // O token é enviado como cookie pelo backend, então não precisamos extraí-lo da resposta aqui.
-      // A função setAuthToken já lida com a configuração do token no localStorage.
-      if (response.user) {
+      if (response.token && response.user) {
+        setAuthToken(response.token);
         localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(response.user));
       }
-      setAuthToken(response.token);
-
       
       return response;
     } catch (error) {
+      clearAuth();
       throw error;
     }
   }
@@ -29,17 +27,15 @@ class AuthService {
   async register(userData) {
     try {
       const response = await apiRequest.post(API_ROUTES.AUTH.REGISTER, userData);
-      
-      // O token é enviado como cookie pelo backend, então não precisamos extraí-lo da resposta aqui.
-      // A função setAuthToken já lida com a configuração do token no localStorage.
-      if (response.user) {
+
+      if (response.token && response.user) {
+        setAuthToken(response.token);
         localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(response.user));
       }
-      setAuthToken(response.token);
-
       
       return response;
     } catch (error) {
+      clearAuth();
       throw error;
     }
   }
@@ -49,10 +45,10 @@ class AuthService {
    */
   async logout() {
     try {
+      // A rota de logout agora é POST
       await apiRequest.post(API_ROUTES.AUTH.LOGOUT);
     } catch (error) {
-      // Mesmo se der erro na API, limpar dados locais
-      console.warn('Erro ao fazer logout na API:', error.message);
+      console.warn('Erro ao fazer logout na API, limpando localmente de qualquer maneira.', error.message);
     } finally {
       clearAuth();
     }
@@ -63,8 +59,7 @@ class AuthService {
    */
   async forgotPassword(email) {
     try {
-      const response = await apiRequest.post(API_ROUTES.AUTH.FORGOT_PASSWORD, { email });
-      return response;
+      return await apiRequest.post(API_ROUTES.AUTH.FORGOT_PASSWORD, { email });
     } catch (error) {
       throw error;
     }
@@ -73,10 +68,9 @@ class AuthService {
   /**
    * Verificar código de recuperação
    */
-  async verifyCode(email, code) {
+  async verifyCode(token, code) {
     try {
-      const response = await apiRequest.post(API_ROUTES.AUTH.VERIFY_CODE, { email, code });
-      return response;
+      return await apiRequest.post(API_ROUTES.AUTH.VERIFY_CODE, { token, code });
     } catch (error) {
       throw error;
     }
@@ -85,21 +79,30 @@ class AuthService {
   /**
    * Redefinir senha
    */
-  async resetPassword(email, code, newPassword) {
+  async resetPassword(token, code, password) {
     try {
-      const response = await apiRequest.post(API_ROUTES.AUTH.RESET_PASSWORD, {
-        email,
-        code,
-        newPassword
-      });
-      return response;
+      return await apiRequest.patch(API_ROUTES.AUTH.RESET_PASSWORD, { token, code, password });
     } catch (error) {
       throw error;
     }
   }
+
+  /**
+   * Tenta validar a sessão atual com o servidor
+   */
+  async validateSession() {
+    try {
+      const response = await apiRequest.get(API_ROUTES.AUTH.PROFILE);
+      return response;
+    } catch (error) {
+      // Se a validação falhar (ex: 401), o interceptor já terá limpado o token.
+      // Apenas retornamos null para indicar que a sessão não é válida.
+      return null;
+    }
+  }
   
   /**
-   * Obter dados do usuário atual
+   * Obter dados do usuário atual do localStorage
    */
   getCurrentUser() {
     try {
@@ -107,17 +110,17 @@ class AuthService {
       return userData ? JSON.parse(userData) : null;
     } catch (error) {
       console.error('Erro ao obter dados do usuário:', error);
+      clearAuth();
       return null;
     }
   }
   
   /**
-   * Verificar se usuário está autenticado
+   * Verificar se usuário está autenticado (baseado em dados locais)
    */
   isAuthenticated() {
-    const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-    const user = this.getCurrentUser();
-    return !!(token && user);
+    const token = getAuthToken();
+    return !!token;
   }
   
   /**
@@ -135,38 +138,7 @@ class AuthService {
    * Obter token de autenticação
    */
   getToken() {
-    return localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-  }
-  
-  /**
-   * Verificar se o token está expirado (básico)
-   */
-  isTokenExpired() {
-    const token = this.getToken();
-    if (!token) return true;
-    
-    try {
-      // Decodificar JWT básico (sem verificação de assinatura)
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const currentTime = Date.now() / 1000;
-      
-      return payload.exp < currentTime;
-    } catch (error) {
-      // Se não conseguir decodificar, considerar expirado
-      return true;
-    }
-  }
-  
-  /**
-   * Renovar token se necessário
-   */
-  async refreshTokenIfNeeded() {
-    if (this.isTokenExpired()) {
-      // Se o token estiver expirado, fazer logout
-      await this.logout();
-      return false;
-    }
-    return true;
+    return getAuthToken();
   }
 }
 

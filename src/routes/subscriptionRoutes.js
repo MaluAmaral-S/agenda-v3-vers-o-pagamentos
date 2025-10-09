@@ -1,15 +1,14 @@
 const express = require('express');
-const { authenticateToken } = require('../middleware/auth');
+const { protect } = require('../controllers/authController');
 const {
   createSubscription,
   getMySubscription,
-  getSubscription,
 } = require('../controllers/subscriptionController');
 
 const router = express.Router();
 
-router.post('/subscriptions', authenticateToken, createSubscription);
-router.get('/subscriptions/me', authenticateToken, getMySubscription);
-router.get('/subscriptions', authenticateToken, getSubscription);
+// As rotas de assinatura agora usam o middleware 'protect'
+router.post('/', protect, createSubscription);
+router.get('/me', protect, getMySubscription);
 
 module.exports = router;

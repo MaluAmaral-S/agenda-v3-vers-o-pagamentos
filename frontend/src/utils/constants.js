@@ -26,7 +26,7 @@ export const API_ROUTES = {
     PLANS: '/plans',
     CREATE: '/subscriptions',
     ME: '/subscriptions/me',
-    CURRENT: '/subscriptions'
+    CURRENT: '/subscriptions/me' // CORREÇÃO: Apontar para a rota correta
   }
 
   ,STRIPE: {

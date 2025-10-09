@@ -23,7 +23,7 @@ const countUsage = async (userId, startsAt, expiresAt) => {
 
 const createSubscription = async (req, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id; // CORREÇÃO: Acessar a propriedade correta 'id'
 
     if (!userId) {
       return res.status(401).json({ error: 'Não autenticado.' });
@@ -82,9 +82,11 @@ const createSubscription = async (req, res) => {
 
 const getMySubscription = async (req, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
+    console.log(`[Subscription] Buscando assinatura para o usuário ID: ${userId}`);
 
     if (!userId) {
+      console.log('[Subscription] Erro: Usuário não autenticado ou ID não encontrado.');
       return res.status(401).json({ error: 'Não autenticado.' });
     }
 
@@ -93,8 +95,10 @@ const getMySubscription = async (req, res) => {
       include: [{ model: Plan, as: 'plan' }],
       order: [['startsAt', 'DESC']],
     });
+    console.log('[Subscription] Resultado da busca por assinatura:', JSON.stringify(subscription, null, 2));
 
     if (!subscription) {
+      console.log('[Subscription] Nenhuma assinatura ativa encontrada para o usuário.');
       return res.json({ hasActive: false });
     }
 
@@ -134,63 +138,7 @@ const getMySubscription = async (req, res) => {
   }
 };
 
-/**
- * Novo: retorna a assinatura com possíveis campos do Stripe já gravados via webhook.
- */
-const getSubscription = async (req, res) => {
-  try {
-    const userId = req.user?.userId;
-    if (!userId) {
-      return res.status(401).json({ error: 'Não autenticado.' });
-    }
-
-    const subscription = await Subscription.findOne({
-      where: { userId },
-      include: [{ model: Plan, as: 'plan', required: false }], // Tenta incluir o plano
-      order: [['createdAt', 'DESC']],
-    });
-
-    // Se não houver registo de assinatura
-    if (!subscription) {
-      return res.status(404).json({ hasActive: false, message: 'Nenhuma assinatura encontrada.' });
-    }
-
-    // PROTEÇÃO ANTI-CRASH: Se a assinatura existe mas o plano não (dados órfãos)
-    if (!subscription.plan) {
-      console.error(`🔥🔥 ERRO DE DADOS: Assinatura ID ${subscription.id} (userId: ${userId}) tem um planId inválido/órfão.`);
-      return res.status(404).json({ hasActive: false, message: 'Assinatura com plano inválido.' });
-    }
-
-    const now = new Date();
-    const expiresAt = new Date(subscription.expiresAt);
-
-    // Se a assinatura estiver inativa por status ou data
-    if (['canceled', 'expired', 'unpaid'].includes(subscription.status) || expiresAt <= now) {
-      if (subscription.status === 'active') await subscription.update({ status: 'expired' });
-      return res.json({ hasActive: false, message: 'Assinatura não está ativa.' });
-    }
-
-    // Se tudo estiver correto, monta a resposta completa
-    const startsAt = new Date(subscription.startsAt);
-    const limit = getPlanLimit(subscription.plan.key, subscription.plan.monthlyLimit);
-    const used = await countUsage(userId, startsAt, expiresAt);
-    const remaining = typeof limit === 'number' ? Math.max(limit - used, 0) : null;
-
-    return res.json({
-      hasActive: true,
-      plan: { key: subscription.plan.key, name: subscription.plan.name, monthlyLimit: limit },
-      subscription: { startsAt, expiresAt, status: subscription.status, daysLeft: diffInDays(expiresAt, now) },
-      usage: { used, remaining, limit },
-    });
-
-  } catch (error) {
-    console.error('🔥🔥🔥 ERRO GRAVE NO CONTROLLER DE ASSINATURA (getSubscription) 🔥🔥🔥', error);
-    return res.status(500).json({ error: 'Erro interno do servidor.' });
-  }
-};
-
 module.exports = {
   createSubscription,
   getMySubscription,
-  getSubscription,
 };

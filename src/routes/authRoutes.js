@@ -6,7 +6,8 @@ const authController = require('../controllers/authController');
 // Rotas de autenticação padrão
 router.post('/register', authController.register);
 router.post('/login', authController.login);
-router.get('/logout', authController.logout);
+router.post('/logout', authController.logout); // MUDANÇA: de GET para POST
+router.post('/refresh-token', authController.refreshToken); // Rota para renovar o token
 
 // Rotas de perfil (protegida)
 router.get('/profile', authController.protect, authController.getProfile);

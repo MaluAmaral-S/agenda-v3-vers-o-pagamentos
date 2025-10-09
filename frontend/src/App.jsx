@@ -7,6 +7,7 @@ import { Toaster } from 'sonner';
 // Paginas
 import Home from './pages/Home';
 import Login from './pages/Login';
+import Register from './pages/Register'; // Importar o novo componente
 import Dashboard from './pages/Dashboard';
 import Services from './pages/Services';
 import BusinessHours from './pages/BusinessHours';
@@ -30,6 +31,7 @@ function App() {
               {/* Rotas publicas */}
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
               <Route path="/planos" element={<Planos />} />
               <Route path="/demo" element={<AppointmentsDemo />} />
               <Route path="/agendamento/:businessSlug" element={<Booking />} /> {/* Rota principal de agendamento */}

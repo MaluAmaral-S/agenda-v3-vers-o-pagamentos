@@ -39,21 +39,35 @@ exports.register = async (req, res) => {
       password,
     });
 
-    const token = jwt.sign(
+    // Geração do Access Token (curta duração)
+    const accessToken = jwt.sign(
       { id: user.id, name: user.name, business: user.businessName },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "1h" }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
     );
-    
-    res.cookie("token", token, {
+
+    // Geração do Refresh Token (longa duração)
+    const refreshToken = jwt.sign(
+      { id: user.id },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' }
+    );
+
+    // Salva o refresh token no banco de dados
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    // Envia o refresh token em um cookie httpOnly
+    res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 3600000, // 1 hora
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
+      path: '/api/auth',
     });
 
     res.status(201).json({
       message: "Usuário criado com sucesso!",
-      token: token,
+      token: accessToken, // Envia o access token no corpo da resposta
       user: {
         id: user.id,
         name: user.name,
@@ -65,6 +79,48 @@ exports.register = async (req, res) => {
   } catch (error) {
     console.error("Erro no registro de usuário:", error);
     res.status(500).json({ message: "Erro interno do servidor ao registrar usuário.", error: error.message });
+  }
+};
+
+/**
+ * Gera um novo access token a partir de um refresh token válido.
+ * @param {Object} req - Objeto de requisição do Express.
+ * @param {Object} res - Objeto de resposta do Express.
+ */
+exports.refreshToken = async (req, res) => {
+  const { refreshToken } = req.cookies;
+
+  if (!refreshToken) {
+    return res.status(401).json({ message: "Refresh token não encontrado." });
+  }
+
+  try {
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const user = await User.findOne({ where: { id: decoded.id, refreshToken } });
+
+    if (!user) {
+      return res.status(403).json({ message: "Refresh token inválido ou revogado." });
+    }
+
+    const accessToken = jwt.sign(
+      { id: user.id, name: user.name, business: user.businessName },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
+    );
+
+    res.status(200).json({
+      token: accessToken,
+    });
+  } catch (error) {
+    console.error("Erro ao renovar token:", error);
+    // Limpa o cookie inválido no cliente
+    res.cookie("refreshToken", "", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        expires: new Date(0),
+        path: '/api/auth',
+    });
+    return res.status(403).json({ message: "Sessão expirada. Faça o login novamente." });
   }
 };
 
@@ -91,21 +147,35 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: "E-mail ou senha inválidos." });
     }
 
-    const token = jwt.sign(
+    // Geração do Access Token (curta duração)
+    const accessToken = jwt.sign(
       { id: user.id, name: user.name, business: user.businessName },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "1h" }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
     );
 
-    res.cookie("token", token, {
+    // Geração do Refresh Token (longa duração)
+    const refreshToken = jwt.sign(
+      { id: user.id },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' }
+    );
+
+    // Salva o refresh token no banco de dados
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    // Envia o refresh token em um cookie httpOnly
+    res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 3600000, // 1 hora
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
+      path: '/api/auth', // Garante que o cookie seja enviado apenas para as rotas de autenticação
     });
 
     res.status(200).json({
       message: "Login bem-sucedido!",
-      token: token,
+      token: accessToken, // Envia o access token no corpo da resposta
       user: {
         id: user.id,
         name: user.name,
@@ -228,13 +298,35 @@ exports.updateProfile = async (req, res) => {
  * @param {Object} req - Objeto de requisição do Express.
  * @param {Object} res - Objeto de resposta do Express.
  */
-exports.logout = (req, res) => {
-  res.cookie("token", "loggedout", {
-    expires: new Date(Date.now() + 10 * 1000), // Expira em 10 segundos
+exports.logout = async (req, res) => {
+  const { refreshToken } = req.cookies;
+
+  // Limpa o cookie do refresh token no cliente
+  res.cookie("refreshToken", "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
+    expires: new Date(0), // Expira o cookie imediatamente
+    path: '/api/auth',
   });
-  res.status(200).json({ status: "success", message: "Logout realizado com sucesso." });
+
+  if (!refreshToken) {
+    // Se não houver refresh token, apenas retorna sucesso
+    return res.status(200).json({ status: "success", message: "Logout realizado (sem token para invalidar)." });
+  }
+
+  try {
+    // Encontra o usuário pelo refresh token e o remove do banco de dados
+    const user = await User.findOne({ where: { refreshToken } });
+    if (user) {
+      user.refreshToken = null;
+      await user.save();
+    }
+
+    res.status(200).json({ status: "success", message: "Logout realizado com sucesso." });
+  } catch (error) {
+    console.error("Erro ao fazer logout:", error);
+    res.status(500).json({ message: "Erro interno do servidor ao fazer logout." });
+  }
 };
 
 /**

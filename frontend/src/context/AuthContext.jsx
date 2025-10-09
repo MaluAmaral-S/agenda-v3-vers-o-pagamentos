@@ -103,26 +103,25 @@ export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
   const checkAuth = async () => {
+    dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: true });
     try {
-      dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: true });
-
       if (authService.isAuthenticated()) {
-        const user = authService.getCurrentUser();
+        const userProfile = await authService.validateSession();
         
-        // Verificar se o token não está expirado
-        const isValid = await authService.refreshTokenIfNeeded();
-
-        if (isValid && user) {
-          dispatch({ type: AUTH_ACTIONS.SET_USER, payload: user });
+        if (userProfile) {
+          authService.updateUserData(userProfile);
+          dispatch({ type: AUTH_ACTIONS.SET_USER, payload: userProfile });
         } else {
           dispatch({ type: AUTH_ACTIONS.LOGOUT });
         }
       } else {
-        dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });
+        dispatch({ type: AUTH_ACTIONS.LOGOUT });
       }
     } catch (error) {
-      console.error('Erro ao verificar autenticação:', error);
+      console.error('Falha na verificação de autenticação:', error);
       dispatch({ type: AUTH_ACTIONS.LOGOUT });
+    } finally {
+      dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });
     }
   };
 
@@ -133,16 +132,13 @@ export const AuthProvider = ({ children }) => {
   
   // Função de login
   const login = async (credentials) => {
+    dispatch({ type: AUTH_ACTIONS.LOGIN_START });
     try {
-      dispatch({ type: AUTH_ACTIONS.LOGIN_START });
-      
       const response = await authService.login(credentials);
-      
       dispatch({
         type: AUTH_ACTIONS.LOGIN_SUCCESS,
         payload: { user: response.user }
       });
-      
       return response;
     } catch (error) {
       dispatch({
@@ -155,16 +151,13 @@ export const AuthProvider = ({ children }) => {
   
   // Função de registro
   const register = async (userData) => {
+    dispatch({ type: AUTH_ACTIONS.REGISTER_START });
     try {
-      dispatch({ type: AUTH_ACTIONS.REGISTER_START });
-      
       const response = await authService.register(userData);
-      
       dispatch({
         type: AUTH_ACTIONS.REGISTER_SUCCESS,
         payload: { user: response.user }
       });
-      
       return response;
     } catch (error) {
       dispatch({
@@ -179,10 +172,9 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await authService.logout();
-      dispatch({ type: AUTH_ACTIONS.LOGOUT });
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
-      // Mesmo com erro, fazer logout local
+    } finally {
       dispatch({ type: AUTH_ACTIONS.LOGOUT });
     }
   };
@@ -197,18 +189,18 @@ export const AuthProvider = ({ children }) => {
   };
   
   // Função para verificar código de recuperação
-  const verifyCode = async (email, code) => {
+  const verifyCode = async (token, code) => {
     try {
-      return await authService.verifyCode(email, code);
+      return await authService.verifyCode(token, code);
     } catch (error) {
       throw error;
     }
   };
   
   // Função para redefinir senha
-  const resetPassword = async (email, code, newPassword) => {
+  const resetPassword = async (token, code, newPassword) => {
     try {
-      return await authService.resetPassword(email, code, newPassword);
+      return await authService.resetPassword(token, code, newPassword);
     } catch (error) {
       throw error;
     }
