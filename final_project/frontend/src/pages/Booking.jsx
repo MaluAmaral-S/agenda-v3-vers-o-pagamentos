@@ -1,7 +1,6 @@
 ﻿import React, { useState, useEffect } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { apiRequest } from "../services/api";
-import { startCheckoutPro } from "../services/mercadoPagoIntegrationService";
 import { formatDateForAPI } from "../utils/dateUtils";
 import {
   CalendarCheck,
@@ -19,9 +18,6 @@ import {
   // Ícones adicionais para nova funcionalidade
   PlusCircle,
   List,
-  CreditCard,
-  QrCode,
-  Barcode,
   XCircle,
   RotateCcw,
   Search,
@@ -31,16 +27,8 @@ import {
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-const parseMoney = (value) => {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number') return value;
-  const parsed = Number(String(value).replace(',', '.'));
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
 const Booking = () => {
   const { businessSlug } = useParams();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -59,11 +47,8 @@ const Booking = () => {
     email: "",
   });
   const [bookingSuccess, setBookingSuccess] = useState(false);
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [paymentResult, setPaymentResult] = useState({ status: null, details: null });
   const [hoursConfigured, setHoursConfigured] = useState(true);
   const [subscriptionError, setSubscriptionError] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
 
   // --- Estados e funções adicionais para a funcionalidade "Meus Agendamentos" ---
   // Controla a visualização: false = fluxo de novo agendamento, true = ver meus agendamentos
@@ -81,9 +66,6 @@ const Booking = () => {
   const [rescheduleTime, setRescheduleTime] = useState(null);
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
-  const refundWindowDays = Number(import.meta.env.VITE_REFUND_WINDOW_DAYS || 7);
-  const paymentsActive = Boolean(businessData?.paymentsEnabled && businessData?.mpConnected);
-  const paymentsAwaitingActivation = Boolean(businessData?.paymentsEnabled && !businessData?.mpConnected);
 
   // Alterna a visualização entre novo agendamento e meus agendamentos
   const toggleView = (view) => {
@@ -103,33 +85,10 @@ const Booking = () => {
         return 'Confirmado';
       case 'rejected':
         return 'Cancelado';
-      case 'canceled':
-        return 'Cancelado';
       case 'rescheduled':
         return 'Remarcação solicitada';
       default:
         return status;
-    }
-  };
-
-  const translatePaymentStatus = (status) => {
-    switch ((status || '').toLowerCase()) {
-      case 'pendente':
-      case 'pending':
-      case 'in_process':
-        return 'Pendente';
-      case 'pago':
-      case 'paid':
-        return 'Pago';
-      case 'reembolsado':
-      case 'refunded':
-      case 'partially_refunded':
-        return 'Reembolsado';
-      case 'cancelled':
-      case 'failed':
-        return 'Cancelado';
-      default:
-        return 'Não informado';
     }
   };
 
@@ -163,23 +122,9 @@ const Booking = () => {
       return;
     }
     try {
-      const response = await apiRequest.delete(
-        `/agendamentos/${appointmentId}?email=${encodeURIComponent(emailSearch)}&phone=${encodeURIComponent(phoneSearch)}`
-      );
-      toast.success(
-        response?.message || `Agendamento cancelado com sucesso. O valor será estornado em até ${refundWindowDays} dias úteis.`
-      );
-      setSearchResults((results) =>
-        results.map((app) =>
-          app.id === appointmentId
-            ? {
-                ...app,
-                status: 'canceled',
-                statusPagamento: response?.refundStatus || app.statusPagamento || 'pendente',
-              }
-            : app
-        )
-      );
+      await apiRequest.delete(`/agendamentos/${appointmentId}?email=${encodeURIComponent(emailSearch)}&phone=${encodeURIComponent(phoneSearch)}`);
+      toast.success('Agendamento cancelado com sucesso');
+      setSearchResults((results) => results.filter((app) => app.id !== appointmentId));
     } catch (error) {
       toast.error(error.message || 'Erro ao cancelar agendamento');
     }
@@ -297,59 +242,10 @@ const Booking = () => {
     }
   }, [selectedService, selectedDate]);
 
-  // Detecta retorno do pagamento e mostra "Meus Agendamentos"
-  useEffect(() => {
-    const view = searchParams.get('view');
-    const appointmentId = searchParams.get('appointment_id');
-    const paymentStatus = searchParams.get('payment_status');
-
-    // Se vem dos parâmetros de retorno do MP, mostrar tela de agendamentos
-    if (view === 'appointments' && appointmentId) {
-      setViewMyAppointments(true);
-
-      // Buscar o agendamento específico para mostrar
-      (async () => {
-        try {
-          const appointment = await apiRequest.get(`/agendamentos/${appointmentId}/status`);
-
-          if (appointment) {
-            // Definir os dados de busca para exibir este agendamento
-            if (appointment.clientEmail) {
-              setEmailSearch(appointment.clientEmail);
-            }
-            if (appointment.clientPhone) {
-              setPhoneSearch(appointment.clientPhone);
-            }
-
-            // Simular busca para mostrar o agendamento
-            setSearchResults([appointment]);
-
-            // Mostrar toast apropriado baseado no status do pagamento
-            if (paymentStatus === 'approved' || appointment.paymentStatus === 'paid') {
-              toast.success('Pagamento aprovado! Seu agendamento está confirmado.');
-            } else if (paymentStatus === 'pending' || appointment.paymentStatus === 'pending') {
-              toast.info('Pagamento pendente. Você será notificado quando for confirmado.');
-            } else if (paymentStatus === 'failed') {
-              toast.error('Não foi possível processar o pagamento. Tente novamente.');
-            }
-          }
-        } catch (err) {
-          console.error('Erro ao buscar agendamento:', err);
-          toast.error('Não foi possível carregar os dados do agendamento.');
-        }
-      })();
-
-      // Limpar query params após processar
-      setTimeout(() => {
-        setSearchParams({});
-      }, 1000);
-    }
-  }, [searchParams, setSearchParams]);
-
   const loadBusinessData = async () => {
     try {
       setLoading(true);
-      const data = await apiRequest.get(`/public/business/${businessSlug}`);
+      const data = await apiRequest.get(`/business/${businessSlug}`);
       
       setBusinessData(data.business);
       setServices(data.services || []);
@@ -407,9 +303,7 @@ const Booking = () => {
 
   const handleBookingSubmit = async (e) => {
     e.preventDefault();
-    if (submitting) return;
     try {
-      setSubmitting(true);
       const bookingData = {
         serviceId: selectedService.id,
         clientName: clientData.nome,
@@ -418,80 +312,14 @@ const Booking = () => {
         appointmentDate: formatDateForAPI(selectedDate),
         appointmentTime: selectedTime,
       };
-      const resp = await apiRequest.post(`/empresa/${businessData.id}/agendamentos`, bookingData);
-
-      if (resp?.payment?.processor === 'mercadopago' && resp.payment?.bookingId) {
-        toast.success('Agendamento criado! Redirecionando para o Mercado Pago...');
-        try {
-          const computedTotal =
-            parseMoney(selectedService?.preco) ??
-            parseMoney(resp?.appointment?.amount) ??
-            parseMoney(resp?.appointment?.service?.preco) ??
-            0;
-          const normalizedTotal = Number.isFinite(computedTotal) && computedTotal > 0 ? Number(computedTotal) : 0;
-          const serviceTitle =
-            selectedService?.nome ||
-            resp?.appointment?.service?.nome ||
-            businessData?.businessName ||
-            'Serviço';
-
-          const checkoutPayload = {
-            bookingId: resp.payment.bookingId,
-            companyId: businessData.id,
-            items: [
-              {
-                title: serviceTitle,
-                quantity: 1,
-                unit_price: normalizedTotal,
-              },
-            ],
-            payer: {
-              name: clientData.nome?.trim() || undefined,
-              email: clientData.email?.trim() || undefined,
-              phone: clientData.telefone?.trim() || undefined,
-            },
-            metadata: {
-              serviceId: selectedService?.id,
-              businessSlug,
-            },
-          };
-          if (normalizedTotal > 0) {
-            checkoutPayload.total = normalizedTotal;
-          }
-          if (!checkoutPayload.payer.name && !checkoutPayload.payer.email && !checkoutPayload.payer.phone) {
-            delete checkoutPayload.payer;
-          }
-          const preference = await startCheckoutPro(checkoutPayload);
-          if (preference?.paymentRequired === false) {
-            setBookingSuccess(true);
-            return;
-          }
-          const redirectUrl = preference?.init_point || preference?.sandbox_init_point;
-          if (redirectUrl) {
-            window.location.href = redirectUrl;
-            return;
-          }
-          toast.error('Não foi possível iniciar o pagamento online. Tente novamente em instantes.');
-        } catch (prefError) {
-          console.error('Falha ao criar preferência Mercado Pago:', prefError);
-          const mpMessage =
-            prefError?.response?.data?.message ||
-            (typeof prefError?.response?.data === 'string' ? prefError.response.data : null);
-          toast.error(mpMessage || prefError?.message || 'Não foi possível iniciar o pagamento online.');
-        }
-      }
+      await apiRequest.post(`/empresa/${businessData.id}/agendamentos`, bookingData);
       setSubscriptionError(null);
-      if (!resp?.payment || resp.payment?.processor !== 'mercadopago') {
-        setBookingSuccess(true);
-      }
+      setBookingSuccess(true);
     } catch (error) {
       console.error("Erro ao criar agendamento:", error);
       const fallbackMessage = "Erro ao criar agendamento. Por favor, tente novamente.";
-      const message =
-        error?.response?.data?.message ||
-        error?.message ||
-        fallbackMessage;
-      const normalized = (message || '').toLowerCase();
+      const message = error.message || fallbackMessage;
+      const normalized = message.toLowerCase();
 
       let userMessage = fallbackMessage;
       if (normalized.includes("limite")) {
@@ -509,13 +337,11 @@ const Booking = () => {
       } else {
         setSubscriptionError(null);
       }
-    } finally {
-      setSubmitting(false);
     }
   };
 
   const goToPreviousStep = () => currentStep > 1 && setCurrentStep(currentStep - 1);
-  const goToNextStep = () => currentStep < 4 && setCurrentStep(currentStep + 1);
+  const goToNextStep = () => currentStep < 5 && setCurrentStep(currentStep + 1);
 
   const canContinue = () => {
     switch (currentStep) {
@@ -593,76 +419,9 @@ const Booking = () => {
     return days;
   };
 
-  // Modal de resultado do pagamento
-  const PaymentResultModal = () => {
-    const statusParam = (paymentResult.status || '').toLowerCase();
-    const ok = statusParam === 'success' || statusParam === 'approved';
-    const pending = statusParam === 'pending' || statusParam === 'in_process';
-    const info = paymentResult.details || {};
-    const serviceName = info?.service?.nome || selectedService?.nome;
-    const amount = info?.valorPago ?? info?.service?.preco ?? selectedService?.preco;
-    const dateLabel = info?.appointmentDate || (selectedDate ? formatDateForAPI(selectedDate) : null);
-    const timeLabel = info?.appointmentTime || selectedTime;
-    const paymentStatusLabel = translatePaymentStatus(info?.paymentStatus || info?.statusPagamento || statusParam);
-    if (!paymentModalOpen) return null;
-    return (
-      <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-        <div className="bg-white w-full max-w-md rounded-xl shadow-xl p-6">
-          <div className="flex items-center gap-3 mb-4">
-            {ok ? (
-              <Check className="w-5 h-5 text-green-600" />
-            ) : pending ? (
-              <Clock className="w-5 h-5 text-amber-600" />
-            ) : (
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
-            )}
-            <h3 className="text-lg font-semibold text-gray-900">
-              {ok ? 'Pagamento aprovado' : pending ? 'Aguardando confirmação do pagamento' : 'Pagamento não concluído'}
-            </h3>
-          </div>
-          <div className="space-y-2 text-sm text-gray-700">
-            {serviceName && (
-              <div className="flex justify-between"><span>Serviço</span><span className="font-medium">{serviceName}</span></div>
-            )}
-            {(amount ?? null) !== null && (
-              <div className="flex justify-between"><span>Valor</span><span className="font-medium">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(amount))}</span></div>
-            )}
-            {dateLabel && (
-              <div className="flex justify-between"><span>Data</span><span className="font-medium">{dateLabel}</span></div>
-            )}
-            {timeLabel && (
-              <div className="flex justify-between"><span>Horário</span><span className="font-medium">{timeLabel}</span></div>
-            )}
-            <div className="flex justify-between"><span>Status do pagamento</span><span className="font-medium capitalize">{paymentStatusLabel}</span></div>
-          </div>
-          {pending && (
-            <div className="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-              Recebemos seu pedido de pagamento. Pix e boletos podem levar alguns minutos para serem confirmados. Você receberá um e-mail quando o status for atualizado.
-            </div>
-          )}
-          <div className="mt-6 flex gap-2 justify-end">
-            <button
-              onClick={() => setPaymentModalOpen(false)}
-              className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
-            >
-              Fechar
-            </button>
-            <button
-              onClick={() => { setPaymentModalOpen(false); setViewMyAppointments(true); setCurrentStep(1); }}
-              className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700"
-            >
-              Ir para Meus Agendamentos
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <PaymentResultModal />
         <div className="text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-100 rounded-full mb-4">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
@@ -681,7 +440,6 @@ const Booking = () => {
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <PaymentResultModal />
         <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center max-w-md">
           <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -704,7 +462,6 @@ const Booking = () => {
   if (bookingSuccess) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <PaymentResultModal />
         <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center max-w-md">
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-8 h-8 text-green-600" />
@@ -767,7 +524,6 @@ const Booking = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <PaymentResultModal />
       <header className="bg-gradient-to-r from-purple-600 to-purple-700 shadow-lg">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-center py-6">
@@ -777,10 +533,7 @@ const Booking = () => {
               </div>
               <div className="text-center">
                 <h1 className="text-2xl font-bold text-white">Agendamento Online</h1>
-                <p className="text-white/80 text-sm">
-                  {businessData?.name || 'Empresa'}
-                  {businessData?.ownerName ? ` • Atendimento por ${businessData.ownerName}` : ''}
-                </p>
+                <p className="text-white/80 text-sm">{businessData?.name}</p>
               </div>
             </div>
           </div>
@@ -823,24 +576,6 @@ const Booking = () => {
             <List className="w-5 h-5 mr-2" />
             Meus Agendamentos
           </button>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border p-4 mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-gray-600">
-            <div className="flex items-center gap-2">
-              <Mail className="w-4 h-4 text-purple-500" />
-              <span>{businessData?.email || 'E-mail não informado'}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Phone className="w-4 h-4 text-purple-500" />
-              <span>{businessData?.phone || 'Telefone não informado'}</span>
-            </div>
-            {businessData?.businessType && (
-              <div className="flex items-center gap-2">
-                <LayoutGrid className="w-4 h-4 text-purple-500" />
-                <span>{businessData.businessType}</span>
-              </div>
-            )}
-          </div>
         </div>
         {/* Conteúdo condicional baseado na visualização selecionada */}
         {viewMyAppointments ? (
@@ -917,10 +652,6 @@ const Booking = () => {
                           <p className="text-sm text-gray-600">Data: {new Date(app.appointmentDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
                           <p className="text-sm text-gray-600">Horário: {app.appointmentTime?.substring(0,5)}</p>
                           <p className="text-sm text-gray-600">Status: {translateStatus(app.status)}</p>
-                          <p className="text-sm text-gray-600">Pagamento: {translatePaymentStatus(app.statusPagamento)}</p>
-                          {app.valorPago && Number(app.valorPago) > 0 && (
-                            <p className="text-sm text-gray-600">Valor pago: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(app.valorPago))}</p>
-                          )}
                           {app.status === 'rescheduled' && app.suggestedDate && app.suggestedTime && (
                             <p className="text-sm text-gray-500 mt-1">Nova data/hora sugerida: {new Date(app.suggestedDate + 'T00:00:00').toLocaleDateString('pt-BR')} às {app.suggestedTime?.substring(0,5)}</p>
                           )}
@@ -942,19 +673,9 @@ const Booking = () => {
                               <RotateCcw className="w-4 h-4 mr-1" />
                               Remarcar
                             </button>
-                            <p className="text-xs text-gray-500 sm:ml-2 sm:mt-0 mt-2">
-                              Ao cancelar, o valor será estornado em até {refundWindowDays} dias úteis.
-                            </p>
                           </div>
                         ) : (
-                          <div className="flex flex-col mt-4 sm:mt-0 sm:items-end">
-                            <span className="text-sm italic text-gray-500">{translateStatus(app.status)}</span>
-                            {app.status === 'canceled' && (
-                              <span className="text-sm text-gray-600 mt-1">
-                                Reembolso: {translatePaymentStatus(app.statusPagamento)}
-                              </span>
-                            )}
-                          </div>
+                          <div className="text-sm italic text-gray-500 mt-4 sm:mt-0">{translateStatus(app.status)}</div>
                         )}
                       </div>
                     ))}
@@ -1236,64 +957,18 @@ const Booking = () => {
                       </div>
                     </div>
                   </div>
-                  {paymentsActive ? (
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-sm text-purple-900 space-y-3">
-                      <p className="font-medium flex items-center gap-2">
-                        <Check className="w-4 h-4" />
-                        Pagamento online disponível com total segurança via Mercado Pago.
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-purple-800">
-                        <span className="flex items-center gap-2 bg-white/70 border border-purple-200 rounded-lg px-3 py-2">
-                          <CreditCard className="w-4 h-4" />
-                          Cartão de crédito
-                        </span>
-                        <span className="flex items-center gap-2 bg-white/70 border border-purple-200 rounded-lg px-3 py-2">
-                          <QrCode className="w-4 h-4" />
-                          Pix instantâneo
-                        </span>
-                        <span className="flex items-center gap-2 bg-white/70 border border-purple-200 rounded-lg px-3 py-2">
-                          <Barcode className="w-4 h-4" />
-                          Outras opções do Checkout Pro
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900 space-y-2">
-                      <p className="font-medium flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4" />
-                        Pagamento online indisponível no momento.
-                      </p>
-                      <p>
-                        {paymentsAwaitingActivation
-                          ? 'Esta empresa está finalizando a ativação da conta Mercado Pago. Você poderá combinar o pagamento diretamente com o estabelecimento.'
-                          : 'Combine as condições de pagamento diretamente com o estabelecimento após confirmar o agendamento.'}
-                      </p>
-                    </div>
-                  )}
                   <button
                     type="submit"
-                    disabled={submitting}
-                    className={`w-full font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center ${submitting ? 'bg-purple-300 cursor-not-allowed text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center"
                   >
-                    {submitting ? (
-                      <>
-                        <div className="animate-spin w-4 h-4 border-b-2 border-white rounded-full mr-2"></div>
-                        Processando...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-5 h-5 mr-2" />
-                        Confirmar Agendamento
-                      </>
-                    )}
+                    <Check className="w-5 h-5 mr-2" />
+                    Confirmar Agendamento
                   </button>
                 </form>
               </div>
             )}
             {!bookingSuccess && (
-              <div
-                className={`flex mt-8 ${currentStep < 4 ? 'justify-between' : 'justify-start'}`}
-              >
+              <div className="flex justify-between mt-8">
                 <button
                   onClick={goToPreviousStep}
                   disabled={currentStep === 1}
@@ -1302,16 +977,14 @@ const Booking = () => {
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Voltar
                 </button>
-                {currentStep < 4 && (
-                  <button
-                    onClick={goToNextStep}
-                    disabled={!canContinue()}
-                    className={`px-6 py-3 rounded-lg font-medium flex items-center ${!canContinue() ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
-                  >
-                    Continuar
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </button>
-                )}
+                <button
+                  onClick={goToNextStep}
+                  disabled={!canContinue()}
+                  className={`px-6 py-3 rounded-lg font-medium flex items-center ${!canContinue() ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
+                >
+                  Continuar
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </button>
               </div>
             )}
           </>

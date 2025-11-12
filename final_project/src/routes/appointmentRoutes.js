@@ -9,8 +9,6 @@ const {
   getClientAppointments,
   cancelAppointmentByClient,
   requestRescheduleByClient,
-  cancelAppointmentByBusiness,
-  getAppointmentPublic,
 } = require("../controllers/appointmentController");
 
 const { protect } = require("../middlewares/auth"); // padronizado
@@ -26,7 +24,6 @@ router.post(
 );
 router.get("/empresa/:id/horarios-disponiveis", getAvailableSlots);
 router.get("/empresa/:id/agendamentos-cliente", getClientAppointments);
-router.get("/agendamentos/:id/status", getAppointmentPublic);
 router.delete("/agendamentos/:id", cancelAppointmentByClient);
 router.patch("/agendamentos/:id/solicitar-remarcacao", requestRescheduleByClient);
 
@@ -51,6 +48,5 @@ router.get("/empresa/:id/agendamentos", protect, (req, res, next) => {
 router.use(protect);
 router.get("/agendamentos", getAppointments);
 router.patch("/agendamentos/:id/status", updateAppointmentStatus);
-router.patch("/agendamentos/:id/cancelar", cancelAppointmentByBusiness);
 
 module.exports = router;

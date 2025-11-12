@@ -109,6 +109,21 @@ const PaymentStatus = () => {
     }
   }, [bookingUrlFromQuery]);
 
+  const sameOriginBookingUrl = useMemo(() => {
+    if (!normalizedBookingUrlFromQuery || typeof window === 'undefined') {
+      return null;
+    }
+    try {
+      const parsed = new URL(normalizedBookingUrlFromQuery, window.location.origin);
+      if (parsed.origin === window.location.origin) {
+        return parsed.toString();
+      }
+    } catch (_err) {
+      return null;
+    }
+    return null;
+  }, [normalizedBookingUrlFromQuery]);
+
   const appointmentUrl = useMemo(() => {
     if (!externalReference) return null;
     return `${API_ROOT}/public/appointments/${externalReference}`;
@@ -189,12 +204,12 @@ const PaymentStatus = () => {
   const toneClass = TONE_BADGE[config.tone] || TONE_BADGE.warning;
 
   const bookingHref = useMemo(() => {
-    if (normalizedBookingUrlFromQuery) return normalizedBookingUrlFromQuery;
     if (bookingSlugFromQuery) return `/agendamento/${bookingSlugFromQuery}`;
-    if (appointmentDetails?.bookingUrl) return appointmentDetails.bookingUrl;
+    if (sameOriginBookingUrl) return sameOriginBookingUrl;
     if (appointmentDetails?.businessSlug) return `/agendamento/${appointmentDetails.businessSlug}`;
+    if (appointmentDetails?.bookingUrl) return appointmentDetails.bookingUrl;
     return '/agendamento';
-  }, [normalizedBookingUrlFromQuery, bookingSlugFromQuery, appointmentDetails]);
+  }, [bookingSlugFromQuery, sameOriginBookingUrl, appointmentDetails]);
 
   const amountDisplay = useMemo(() => {
     if (appointmentDetails?.amount === 0 || appointmentDetails?.amount) {

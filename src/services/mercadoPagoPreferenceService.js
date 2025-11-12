@@ -208,7 +208,7 @@ async function createPreference({
   const body = {
     items: buildItems(appointment, service, overrideItems),
     external_reference: appointment.mpExternalReference || String(appointment.id),
-    auto_return: 'approved',
+    auto_return: 'all',
     back_urls: backUrls,
     notification_url: notificationUrl,
     payer: buildPayer(appointment, payerOverride),

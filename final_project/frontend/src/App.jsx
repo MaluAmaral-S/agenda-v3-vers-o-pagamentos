@@ -15,9 +15,6 @@ import Booking from './pages/Booking';
 import AppointmentsDemo from './pages/AppointmentsDemo';
 import PrimeirosPassos from './pages/PrimeirosPassos';
 import MinhaAssinatura from './pages/MinhaAssinatura';
-import Sucesso from './pages/pagamento/Sucesso';
-import Erro from './pages/pagamento/Erro';
-import Pendente from './pages/pagamento/Pendente';
 
 
 
@@ -38,9 +35,6 @@ function App() {
               <Route path="/demo" element={<AppointmentsDemo />} />
               <Route path="/agendamento/:businessSlug" element={<Booking />} /> {/* Rota principal de agendamento */}
               <Route path="/agendamento" element={<Booking />} />
-              <Route path="/pagamento/sucesso" element={<Sucesso />} />
-              <Route path="/pagamento/erro" element={<Erro />} />
-              <Route path="/pagamento/pendente" element={<Pendente />} />
               
               {/* Rotas protegidas */}
               <Route path="/painel" element={
